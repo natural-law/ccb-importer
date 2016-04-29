@@ -1,0 +1,10 @@
+{
+  "name": "ccb-importer",
+  "version": "0.1.0",
+  "description": "Cocos Builder Projects Importer",
+  "author": "Chukong Inc.",
+  "packages": {
+    "project-importer": "^0.1.0"
+  },
+  "main": "main.js"
+}
