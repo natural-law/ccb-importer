@@ -5,12 +5,14 @@ const Path = require('path');
 const Fs = require('fire-fs');
 const Plist = require('plist');
 const Url = require('fire-url');
+const CCBImporter = require('./ccb-importer');
 
 const ResAutoFolderName = 'resources-auto';
 const AssetsRootUrl = 'db://assets';
 const TempFolderName = 'temp';
 
 var tempResPath = '';
+var tempCCBsPath = '';
 var projectPath = '';
 var newResourceUrl = '';
 var projectName = '';
@@ -36,7 +38,7 @@ function importProject (projFile, cb) {
 
     var i, n;
     for (i = 0, n = resPaths.length; i < n; i++) {
-        _copyResources(resPaths[i], tempResPath);
+        _copyResources(resPaths[i], tempResPath, resPaths[i]);
     }
 
     Async.waterfall([
@@ -45,6 +47,9 @@ function importProject (projFile, cb) {
             Editor.assetdb.import([tempResPath], AssetsRootUrl, false, function(err, results) {
                 next();
             });
+        },
+        function(next) {
+            CCBImporter.importCCBFiles(ccbFiles, tempResPath, tempCCBsPath, newResourceUrl, next);
         }
     ], function () {
         Editor.log('Import Cocos Builder project finished.');
@@ -58,6 +63,7 @@ function importProject (projFile, cb) {
 function _removeTempResPath() {
     try {
         _rmdirRecursive(tempResPath);
+        _rmdirRecursive(tempCCBsPath);
     } catch (err) {
         Editor.warn('Delete temp path %s failed, please delete it manually!', tempResPath);
     }
@@ -108,9 +114,17 @@ function _createTempResPath() {
     }
 
     Fs.mkdirsSync(tempResPath);
+
+    // create a temp path for ccb files
+    tempCCBsPath = tempResPath + '_ccbs';
+    if (Fs.existsSync(tempCCBsPath)) {
+        _rmdirRecursive(tempCCBsPath);
+    }
+
+    Fs.mkdirsSync(tempCCBsPath);
 }
 
-function _copyResources(srcPath, dstPath) {
+function _copyResources(srcPath, dstPath, resRoot) {
     if (! Fs.existsSync(srcPath)) {
         Editor.warn('%s is not found!', srcPath);
         return;
@@ -129,11 +143,13 @@ function _copyResources(srcPath, dstPath) {
             }
 
             // recurse
-            _copyResources(absPath, targetPath);
+            _copyResources(absPath, targetPath, resRoot);
         } else {
             var ext = Path.extname(absPath);
             if (ext === '.ccb') {
-                ccbFiles.push(absPath);
+                targetPath = Path.join(tempCCBsPath, Path.relative(resRoot, absPath));
+                Fs.copySync(absPath, targetPath);
+                ccbFiles.push(targetPath);
             } else {
                 if (!Fs.existsSync(targetPath)) {
                     Fs.copySync(absPath, targetPath);
