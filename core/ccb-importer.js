@@ -7,6 +7,7 @@ const Plist = require('plist');
 const Url = require('fire-url');
 
 const DEFAULT_SP_URL = 'db://internal/image/default_sprite.png/default_sprite';
+const DEFAULT_SPLASH_SP_URL = 'db://internal/image/default_sprite_splash.png/default_sprite_splash';
 
 const nodeCreators = {
 
@@ -14,7 +15,8 @@ const nodeCreators = {
 
 const nodeImporters = {
     'CCSprite' : _initSprite,
-    'CCScale9Sprite' : _initScale9Sprite
+    'CCScale9Sprite' : _initScale9Sprite,
+    'CCLayerColor' : _initLayerColor
 };
 
 var resRootUrl = '';
@@ -264,7 +266,7 @@ function _convertNodePos(node, curPos) {
 }
 
 function _initBaseProperties(node, props) {
-    var anchorValue = _getProperty(props, 'anchorPoint', [ 0.5, 0.5]);
+    var anchorValue = _getProperty(props, 'anchorPoint', [ 0, 0 ]);
     var ignoreAnchor = _getProperty(props, 'ignoreAnchorPointForPosition', false);
     if (ignoreAnchor) {
         node.setAnchorPoint(0, 0);
@@ -391,6 +393,20 @@ function _initScale9Sprite(node, props, cb) {
             }
         }
     ], cb);
+}
+
+function _initLayerColor(node, props, cb) {
+    var sp = node.addComponent(cc.Sprite);
+    if (!sp) {
+        return cb();
+    }
+
+    // init file data
+    sp.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+    sp.trim = false;
+    sp.spriteFrame = new cc.SpriteFrame();
+    sp.spriteFrame._uuid = Editor.assetdb.remote.urlToUuid(DEFAULT_SPLASH_SP_URL);
+    cb();
 }
 
 module.exports = {
