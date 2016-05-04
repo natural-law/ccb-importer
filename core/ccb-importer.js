@@ -16,7 +16,9 @@ const nodeCreators = {
 const nodeImporters = {
     'CCSprite' : _initSprite,
     'CCScale9Sprite' : _initScale9Sprite,
-    'CCLayerColor' : _initLayerColor
+    'CCLayerColor' : _initLayerColor,
+    'CCLabelTTF' : _initLabel,
+    'CCLabelBMFont' : _initLabel
 };
 
 var resRootUrl = '';
@@ -347,8 +349,7 @@ function _initSpriteWithSizeMode(node, props, sizeMode) {
 function _setScale9Properties(props, uuid, cb) {
     Editor.assetdb.queryMetaInfoByUuid(uuid, function(err,info) {
         if (!info) {
-            cb();
-            return;
+            return cb();
         }
 
         // modify the meta info
@@ -407,6 +408,83 @@ function _initLayerColor(node, props, cb) {
     sp.spriteFrame = new cc.SpriteFrame();
     sp.spriteFrame._uuid = Editor.assetdb.remote.urlToUuid(DEFAULT_SPLASH_SP_URL);
     cb();
+}
+
+function _initLabel(node, props, cb) {
+    var label = node.addComponent(cc.Label);
+    if (!label) {
+        return cb();
+    }
+
+    var dimensions = _getProperty(props, 'dimensions', [ 0, 0, 0 ]);
+    if (dimensions[0] === 0 || dimensions[1] === 0) {
+        label.overflow = cc.Label.Overflow.NONE;
+    } else {
+        label.overflow = cc.Label.Overflow.CLAMP;
+        label._useOriginalSize = false;
+        node.setContentSize(dimensions[0], dimensions[1]);
+    }
+
+    // init text
+    label.string = _getProperty(props, 'string', '');
+    label.lineHeight = 0;
+
+    // set the alignment
+    label.horizontalAlign = _getProperty(props, 'horizontalAlignment', 0);
+    label.verticalAlign = _getProperty(props, 'verticalAlignment', 0);
+
+    Async.waterfall([
+        function(next) {
+            // init fnt properties
+            var ttfCfg = _getProperty(props, 'fontName', '');
+            var bmfntCfg = _getProperty(props, 'fntFile', '');
+            if (bmfntCfg) {
+                // BMFont
+                _setFntFileForLabel(label, bmfntCfg, next);
+            }
+            else if (ttfCfg && Path.extname(ttfCfg) === '.ttf') {
+                // ttf font
+                _setFntFileForLabel(label, ttfCfg, next);
+            } else {
+                next();
+            }
+        },
+        function(next) {
+            // TODO if using BMFont file, should set the fontSize with default size of BMFont.
+            var fontSize = _getProperty(props, 'fontSize', [ -1, 0 ]);
+            if (fontSize[0] >= 0) {
+                label.fontSize = fontSize[0];
+            }
+            next();
+        }
+    ], cb);
+}
+
+function _setFntFileForLabel(label, fntCfg, cb) {
+    if (!label || !fntCfg) {
+        return cb();
+    }
+
+    var fntFileUrl = Url.join(resRootUrl, fntCfg);
+    var needLoadFnt = false;
+    if (fntFileUrl) {
+        var fntUuid = Editor.assetdb.remote.urlToUuid(fntFileUrl);
+        if (Editor.assetdb.remote.existsByUuid(fntUuid)) {
+            needLoadFnt = true;
+        }
+    }
+
+    if (needLoadFnt) {
+        cc.AssetLibrary.loadAsset(fntUuid, function(err, res) {
+            if (err) {
+                return cb();
+            }
+            label.font = res;
+            cb();
+        });
+    } else {
+        cb();
+    }
 }
 
 module.exports = {
