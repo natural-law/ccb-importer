@@ -8,6 +8,9 @@ const Url = require('fire-url');
 
 const DEFAULT_SP_URL = 'db://internal/image/default_sprite.png/default_sprite';
 const DEFAULT_SPLASH_SP_URL = 'db://internal/image/default_sprite_splash.png/default_sprite_splash';
+const DEFAULT_BTN_NORMAL_URL = 'db://internal/image/default_btn_normal.png/default_btn_normal';
+const DEFAULT_BTN_PRESSED_URL = 'db://internal/image/default_btn_pressed.png/default_btn_pressed';
+const DEFAULT_BTN_DISABLED_URL = 'db://internal/image/default_btn_disabled.png/default_btn_disabled';
 
 const nodeCreators = {
 
@@ -18,7 +21,8 @@ const nodeImporters = {
     'CCScale9Sprite' : _initScale9Sprite,
     'CCLayerColor' : _initLayerColor,
     'CCLabelTTF' : _initLabel,
-    'CCLabelBMFont' : _initLabel
+    'CCLabelBMFont' : _initLabel,
+    'CCMenuItemImage' : _initButton
 };
 
 var resRootUrl = '';
@@ -450,7 +454,6 @@ function _initLabel(node, props, cb) {
             }
         },
         function(next) {
-            // TODO if using BMFont file, should set the fontSize with default size of BMFont.
             var fontSize = _getProperty(props, 'fontSize', [ -1, 0 ]);
             if (fontSize[0] >= 0) {
                 label.fontSize = fontSize[0];
@@ -496,6 +499,32 @@ function _setFntFileForLabel(label, fntCfg, cb) {
     } else {
         cb();
     }
+}
+
+function _initButton(node, props, cb) {
+    var btn = node.addComponent(cc.Button);
+    var sp = node.addComponent(cc.Sprite);
+    if (!btn) {
+        return cb();
+    }
+
+    // init the property of sprite component
+    sp.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+    sp.trim = false;
+
+    // init the sprite frame
+    btn.transition = cc.Button.Transition.SPRITE;
+    var normalCfg = _getProperty(props, 'normalSpriteFrame', null);
+    sp.spriteFrame = _getSpriteFrame(normalCfg, DEFAULT_BTN_NORMAL_URL);
+    btn.normalSprite = _getSpriteFrame(normalCfg, DEFAULT_BTN_NORMAL_URL);
+    btn.hoverSprite = _getSpriteFrame(normalCfg, DEFAULT_BTN_NORMAL_URL);
+
+    var pressedCfg = _getProperty(props, 'selectedSpriteFrame', null);
+    btn.pressedSprite = _getSpriteFrame(pressedCfg, DEFAULT_BTN_PRESSED_URL);
+
+    var disabledCfg = _getProperty(props, 'disabledSpriteFrame', null);
+    btn.disabledSprite = _getSpriteFrame(disabledCfg, DEFAULT_BTN_DISABLED_URL);
+    cb();
 }
 
 module.exports = {
