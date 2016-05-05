@@ -23,7 +23,8 @@ const nodeImporters = {
     'CCLabelTTF' : _initLabel,
     'CCLabelBMFont' : _initLabel,
     'CCMenuItemImage' : _initButton,
-    'CCControlButton' : _initControlButton
+    'CCControlButton' : _initControlButton,
+    'CCParticleSystemQuad' : _initParticle
 };
 
 var resRootUrl = '';
@@ -586,6 +587,103 @@ function _initControlButton(node, props, cb) {
         _setFntFileForLabel(label, fntResCfg);
     }
     cb();
+}
+
+function _initParticle(node, props, cb) {
+    var par = node.addComponent(cc.ParticleSystem);
+    if (!par) {
+        return cb();
+    }
+    par.custom = true;
+    par.emitterMode = _getProperty(props, 'emitterMode', cc.ParticleSystem.EmitterMode.GRAVITY);
+    par.emissionRate = _getProperty(props, 'emissionRate', 10);
+    par.duration = _getProperty(props, 'duration', -1);
+    par.totalParticles = _getProperty(props, 'totalParticles', 250);
+    var lifeValue = _getProperty(props, 'life', [ 3, 0.25 ]);
+    par.life = lifeValue[0];
+    par.lifeVar = lifeValue[1];
+    var startSizeValue = _getProperty(props, 'startSize', [ 0, 0 ]);
+    par.startSize = startSizeValue[0];
+    par.startSizeVar = startSizeValue[1];
+    var endSizeValue = _getProperty(props, 'endSize', [ 0, 0 ]);
+    par.endSize = endSizeValue[0];
+    par.endSizeVar = endSizeValue[1];
+    var startSpinValue = _getProperty(props, 'startSpin', [ 0, 0 ]);
+    par.startSpin = startSpinValue[0];
+    par.startSpinVar = startSpinValue[1];
+    var endSpinValue = _getProperty(props, 'endSpin', [ 0, 0 ]);
+    par.endSpin = endSpinValue[0];
+    par.endSpinVar = endSpinValue[1];
+    var angleValue = _getProperty(props, 'angle', [ 0, 0 ]);
+    par.angle = angleValue[0];
+    par.angleVar = angleValue[1];
+    var startColorValue = _getProperty(props, 'startColor', [ [255, 255, 255, 255], [0, 0, 0, 0] ]);
+    par.startColor = new cc.Color(_getColorValue(startColorValue[0][0]),
+                                  _getColorValue(startColorValue[0][1]),
+                                  _getColorValue(startColorValue[0][2]),
+                                  _getColorValue(startColorValue[0][3]));
+    par.startColorVar = new cc.Color(_getColorValue(startColorValue[1][0]),
+                                     _getColorValue(startColorValue[1][1]),
+                                     _getColorValue(startColorValue[1][2]),
+                                     _getColorValue(startColorValue[1][3]));
+    var endColorValue = _getProperty(props, 'endColor', [ [255, 255, 255, 255], [0, 0, 0, 0] ]);
+    par.endColor = new cc.Color(_getColorValue(endColorValue[0][0]),
+                                _getColorValue(startColorValue[0][1]),
+                                _getColorValue(startColorValue[0][2]),
+                                _getColorValue(startColorValue[0][3]));
+    par.endColorVar = new cc.Color(_getColorValue(endColorValue[1][0]),
+                                   _getColorValue(startColorValue[1][1]),
+                                   _getColorValue(startColorValue[1][2]),
+                                   _getColorValue(startColorValue[1][3]));
+
+    var blendValue = _getProperty(props, 'blendFunc', [ 770, 771 ]);
+    par.srcBlendFactor = blendValue[0];
+    par.dstBlendFactor = blendValue[1];
+    var posVarValue = _getProperty(props, 'posVar', [0,0]);
+    par.posVar = cc.p(posVarValue[0], posVarValue[1]);
+
+    if (par.emitterMode === cc.ParticleSystem.EmitterMode.GRAVITY) {
+        var gravityValue = _getProperty(props, 'gravity', [ 0, 0 ]);
+        par.gravity = cc.p(gravityValue[0], gravityValue[1]);
+        var speedValue = _getProperty(props, 'speed', [ 0, 0 ]);
+        par.speed = speedValue[0];
+        par.speedVar = speedValue[1];
+
+        var tangentValue = _getProperty(props, 'tangentialAccel', [ 0, 0 ]);
+        par.tangentialAccel = tangentValue[0];
+        par.tangentialAccelVar = tangentValue[1];
+        var radialAccelValue = _getProperty(props, 'radialAccel', [ 0, 0 ]);
+        par.radialAccel = radialAccelValue[0];
+        par.radialAccelVar = radialAccelValue[1];
+    } else {
+        var startRadiusValue = _getProperty(props, 'startRadius', [0,0]);
+        par.startRadius = startRadiusValue[0];
+        par.startRadiusVar = startRadiusValue[1];
+        var endRadiusValue = _getProperty(props, 'endRadius', [0,0]);
+        par.endRadius = endRadiusValue[0];
+        par.endRadiusVar = endRadiusValue[1];
+        var rotatePerSecondValue = _getProperty(props, 'rotatePerSecond', [0,0]);
+        par.rotatePerS = rotatePerSecondValue[0];
+        par.rotatePerSVar = rotatePerSecondValue[1];
+    }
+
+    var textureFile = _getProperty(props, 'texture', null);
+    if (textureFile) {
+        var texUrl = Url.join(resRootUrl, textureFile);
+        var uuid = Editor.assetdb.remote.urlToUuid(texUrl);
+        if (Editor.assetdb.remote.existsByUuid(uuid)) {
+            par.texture = Editor.assetdb.remote._fspath(texUrl);
+        }
+    }
+    cb();
+}
+
+function _getColorValue(value) {
+    if (value > 1) {
+        return value;
+    }
+
+    return Math.round(value * 255);
 }
 
 module.exports = {
