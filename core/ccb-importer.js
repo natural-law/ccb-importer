@@ -22,7 +22,8 @@ const nodeImporters = {
     'CCLayerColor' : _initLayerColor,
     'CCLabelTTF' : _initLabel,
     'CCLabelBMFont' : _initLabel,
-    'CCMenuItemImage' : _initButton
+    'CCMenuItemImage' : _initButton,
+    'CCControlButton' : _initControlButton
 };
 
 var resRootUrl = '';
@@ -512,6 +513,9 @@ function _initButton(node, props, cb) {
     sp.sizeMode = cc.Sprite.SizeMode.CUSTOM;
     sp.trim = false;
 
+    // set the button enable/disable
+    btn.interactable = _getProperty(props, 'isEnabled', true);
+
     // init the sprite frame
     btn.transition = cc.Button.Transition.SPRITE;
     var normalCfg = _getProperty(props, 'normalSpriteFrame', null);
@@ -524,6 +528,63 @@ function _initButton(node, props, cb) {
 
     var disabledCfg = _getProperty(props, 'disabledSpriteFrame', null);
     btn.disabledSprite = _getSpriteFrame(disabledCfg, DEFAULT_BTN_DISABLED_URL);
+    cb();
+}
+
+function _initControlButton(node, props, cb) {
+    var btn = node.addComponent(cc.Button);
+    var sp = node.addComponent(cc.Sprite);
+    if (!btn) {
+        return cb();
+    }
+
+    var preferedSize = _getProperty(props, 'preferedSize', [ 0, 0, 0 ]);
+    node.setContentSize(preferedSize[0], preferedSize[1]);
+
+    // init the property of sprite component
+    sp.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+    sp.type = cc.Sprite.Type.SLICED;
+    sp.trim = false;
+
+    // set the button enable/disable
+    btn.interactable = _getProperty(props, 'enabled', true);
+
+    // init the sprite frame
+    btn.transition = cc.Button.Transition.SPRITE;
+    var normalCfg = _getProperty(props, 'backgroundSpriteFrame|1', null);
+    sp.spriteFrame = _getSpriteFrame(normalCfg, DEFAULT_BTN_NORMAL_URL);
+    btn.normalSprite = _getSpriteFrame(normalCfg, DEFAULT_BTN_NORMAL_URL);
+    btn.hoverSprite = _getSpriteFrame(normalCfg, DEFAULT_BTN_NORMAL_URL);
+
+    var pressedCfg = _getProperty(props, 'backgroundSpriteFrame|2', null);
+    btn.pressedSprite = _getSpriteFrame(pressedCfg, DEFAULT_BTN_PRESSED_URL);
+
+    var disabledCfg = _getProperty(props, 'backgroundSpriteFrame|3', null);
+    btn.disabledSprite = _getSpriteFrame(disabledCfg, DEFAULT_BTN_DISABLED_URL);
+
+    // add label child
+    var labelNode = new cc.Node('title');
+    var labelAnchor = _getProperty(props, 'labelAnchorPoint', [ 0, 0 ]);
+    labelNode.setAnchorPoint(labelAnchor[0], labelAnchor[1]);
+    node.addChild(labelNode);
+    _convertNodePos(labelNode, cc.p(node.getContentSize().width / 2, node.getContentSize().height / 2));
+
+    var label = labelNode.addComponent(cc.Label);
+    var fontSize = _getProperty(props, 'titleTTFSize|1', [ -1, 0 ]);
+    var btnText = _getProperty(props, 'title|1', '');
+    var txtColorValue = _getProperty(props, 'titleColor|1', [ 255, 255, 255 ]);
+    var txtColor = new cc.Color(txtColorValue[0], txtColorValue[1], txtColorValue[2]);
+    labelNode.setColor(txtColor);
+    label.string = btnText;
+    label.lineHeight = 0;
+    if (fontSize[0] >= 0) {
+        label.fontSize = fontSize[0];
+    }
+
+    var fntResCfg = _getProperty(props, 'titleTTF|1', '');
+    if (fntResCfg && Path.extname(fntResCfg) === '.ttf') {
+        _setFntFileForLabel(label, fntResCfg);
+    }
     cb();
 }
 
