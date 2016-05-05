@@ -433,11 +433,11 @@ function _initLabel(node, props, cb) {
     label.horizontalAlign = _getProperty(props, 'horizontalAlignment', 0);
     label.verticalAlign = _getProperty(props, 'verticalAlignment', 0);
 
+    var ttfCfg = _getProperty(props, 'fontName', '');
+    var bmfntCfg = _getProperty(props, 'fntFile', '');
     Async.waterfall([
         function(next) {
             // init fnt properties
-            var ttfCfg = _getProperty(props, 'fontName', '');
-            var bmfntCfg = _getProperty(props, 'fntFile', '');
             if (bmfntCfg) {
                 // BMFont
                 _setFntFileForLabel(label, bmfntCfg, next);
@@ -454,8 +454,19 @@ function _initLabel(node, props, cb) {
             var fontSize = _getProperty(props, 'fontSize', [ -1, 0 ]);
             if (fontSize[0] >= 0) {
                 label.fontSize = fontSize[0];
+                next();
+            } else if (bmfntCfg) {
+                cc.loader.load(Path.join(resTempPath, bmfntCfg), function(err, config) {
+                    if (err) {
+                        return next();
+                    }
+
+                    label.fontSize = config.fontSize;
+                    next();
+                });
+            } else {
+                next();
             }
-            next();
         }
     ], cb);
 }
