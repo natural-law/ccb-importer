@@ -13,7 +13,7 @@ const DEFAULT_BTN_PRESSED_URL = 'db://internal/image/default_btn_pressed.png/def
 const DEFAULT_BTN_DISABLED_URL = 'db://internal/image/default_btn_disabled.png/default_btn_disabled';
 
 const nodeCreators = {
-
+    'CCBFile' : _createNodeFromCCB
 };
 
 const nodeImporters = {
@@ -684,6 +684,53 @@ function _getColorValue(value) {
     }
 
     return Math.round(value * 255);
+}
+
+function _createNodeFromCCB(nodeData, cb) {
+    debugger;
+    var props = _genProperties(nodeData);
+    var filePath = _getProperty(props, 'ccbFile', '');
+    var ccbPath = Path.join(ccbsTempPath, filePath);
+    var newNode = null;
+    var fileExisted = false;
+    if (filePath && Fs.existsSync(ccbPath)) {
+        fileExisted = true;
+    }
+    Async.waterfall([
+        function(next) {
+            if (!fileExisted) {
+                return next();
+            }
+
+            // import the ccb file as a prefab
+            _importCCBFile(ccbPath, next);
+        },
+        function(next) {
+            if (!fileExisted) {
+                return next();
+            }
+
+            // create a node with imported prefab
+            var folderPath = Path.dirname(ccbPath);
+            var relativePath = Path.relative(ccbsTempPath, folderPath);
+            var ccbName = Path.basename(ccbPath, Path.extname(ccbPath));
+            var prefabUrl = Url.join(resRootUrl, relativePath, ccbName + '.prefab');
+            var uuid = Editor.assetdb.remote.urlToUuid(prefabUrl);
+            cc.AssetLibrary.loadAsset(uuid, function (err, prefab) {
+                if (err) {
+                    next();
+                } else {
+                    newNode = cc.instantiate(prefab);
+                    next();
+                }
+            });
+        }
+    ], function() {
+        if (!newNode) {
+            newNode = new cc.Node();
+        }
+        cb(newNode);
+    });
 }
 
 module.exports = {
