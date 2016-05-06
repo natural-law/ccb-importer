@@ -11,9 +11,12 @@ const DEFAULT_SPLASH_SP_URL = 'db://internal/image/default_sprite_splash.png/def
 const DEFAULT_BTN_NORMAL_URL = 'db://internal/image/default_btn_normal.png/default_btn_normal';
 const DEFAULT_BTN_PRESSED_URL = 'db://internal/image/default_btn_pressed.png/default_btn_pressed';
 const DEFAULT_BTN_DISABLED_URL = 'db://internal/image/default_btn_disabled.png/default_btn_disabled';
+const DEFAULT_VSCROLLBAR_URL = 'db://internal/image/default_scrollbar_vertical.png/default_scrollbar_vertical';
+const DEFAULT_HSCROLLBAR_URL = 'db://internal/image/default_scrollbar.png/default_scrollbar';
 
 const nodeCreators = {
-    'CCBFile' : _createNodeFromCCB
+    'CCBFile' : _createNodeFromCCB,
+    'CCScrollView' : _createScrollView
 };
 
 const nodeImporters = {
@@ -241,9 +244,9 @@ function _initNode(node, nodeData, cb) {
     var nodeType = nodeData.baseClass;
 
     var props = _genProperties(nodeData);
-    _initBaseProperties(node, props);
-
-    node.active = true;
+    if (nodeType !== 'CCScrollView') {
+        _initBaseProperties(node, props);
+    }
 
     // add widget component if necessary
     //_addWidget(node, nodeData);
@@ -274,6 +277,7 @@ function _convertNodePos(node, curPos) {
 }
 
 function _initBaseProperties(node, props) {
+    node.active = _getProperty(props, 'visible', true);
     var anchorValue = _getProperty(props, 'anchorPoint', [ 0, 0 ]);
     var ignoreAnchor = _getProperty(props, 'ignoreAnchorPointForPosition', false);
     if (ignoreAnchor) {
@@ -330,11 +334,11 @@ function _getSpriteFrame(frameData, defaultUrl) {
 }
 
 function _initSprite(node, props, cb) {
-    _initSpriteWithSizeMode(node, props, cc.Sprite.SizeMode.RAW);
+    _initSpriteWithSizeMode(node, props, 'displayFrame', cc.Sprite.SizeMode.RAW);
     cb();
 }
 
-function _initSpriteWithSizeMode(node, props, sizeMode) {
+function _initSpriteWithSizeMode(node, props, frameKey, sizeMode) {
     var sp = node.addComponent(cc.Sprite);
     if (!sp) {
         return;
@@ -346,7 +350,7 @@ function _initSpriteWithSizeMode(node, props, sizeMode) {
     sp.dstBlendFactor = blendValue[1];
 
     // init file data
-    var frameData = _getProperty(props, 'displayFrame', null);
+    var frameData = _getProperty(props, frameKey, null);
     sp.sizeMode = sizeMode;
     sp.trim = false;
     sp.spriteFrame = _getSpriteFrame(frameData, DEFAULT_SP_URL);
@@ -376,7 +380,7 @@ function _setScale9Properties(props, uuid, cb) {
 function _initScale9Sprite(node, props, cb) {
     Async.waterfall([
         function(next) {
-            _initSpriteWithSizeMode(node, props, cc.Sprite.SizeMode.CUSTOM);
+            _initSpriteWithSizeMode(node, props, 'spriteFrame', cc.Sprite.SizeMode.CUSTOM);
             next();
         },
         function(next) {
@@ -628,13 +632,13 @@ function _initParticle(node, props, cb) {
                                      _getColorValue(startColorValue[1][3]));
     var endColorValue = _getProperty(props, 'endColor', [ [255, 255, 255, 255], [0, 0, 0, 0] ]);
     par.endColor = new cc.Color(_getColorValue(endColorValue[0][0]),
-                                _getColorValue(startColorValue[0][1]),
-                                _getColorValue(startColorValue[0][2]),
-                                _getColorValue(startColorValue[0][3]));
+                                _getColorValue(endColorValue[0][1]),
+                                _getColorValue(endColorValue[0][2]),
+                                _getColorValue(endColorValue[0][3]));
     par.endColorVar = new cc.Color(_getColorValue(endColorValue[1][0]),
-                                   _getColorValue(startColorValue[1][1]),
-                                   _getColorValue(startColorValue[1][2]),
-                                   _getColorValue(startColorValue[1][3]));
+                                   _getColorValue(endColorValue[1][1]),
+                                   _getColorValue(endColorValue[1][2]),
+                                   _getColorValue(endColorValue[1][3]));
 
     var blendValue = _getProperty(props, 'blendFunc', [ 770, 771 ]);
     par.srcBlendFactor = blendValue[0];
@@ -686,10 +690,7 @@ function _getColorValue(value) {
     return Math.round(value * 255);
 }
 
-function _createNodeFromCCB(nodeData, cb) {
-    debugger;
-    var props = _genProperties(nodeData);
-    var filePath = _getProperty(props, 'ccbFile', '');
+function _createNodeWithCCBPath(filePath, cb) {
     var ccbPath = Path.join(ccbsTempPath, filePath);
     var newNode = null;
     var fileExisted = false;
@@ -731,6 +732,99 @@ function _createNodeFromCCB(nodeData, cb) {
         }
         cb(newNode);
     });
+}
+
+function _createNodeFromCCB(nodeData, cb) {
+    var props = _genProperties(nodeData);
+    var filePath = _getProperty(props, 'ccbFile', '');
+    _createNodeWithCCBPath(filePath, cb);
+}
+
+function _createScrollView(nodeData, cb) {
+    var scrollNode = new cc.Node();
+    var props = _genProperties(nodeData);
+    _initBaseProperties(scrollNode, props);
+    var scroll = scrollNode.addComponent(cc.ScrollView);
+    if (!scroll) {
+        return cb(scrollNode);
+    }
+
+    scroll.inertia = _getProperty(props, 'bounces', true);
+    var scrollDir = _getProperty(props, 'direction', 2);
+    scroll.vertical = (scrollDir === 1 || scrollDir === 2);
+    scroll.horizontal = (scrollDir === 0 || scrollDir === 2);
+
+    // add Mask component if necessary
+    var clipAble = _getProperty(props, 'clipsToBounds', true);
+    if (clipAble) {
+        var mask = scrollNode.addComponent(cc.Mask);
+        mask.enabled = true;
+    }
+
+    // create content node
+    var containerFile = _getProperty(props, 'container', '');
+    var contentNode = null;
+    Async.waterfall([
+        function(next) {
+            _createNodeWithCCBPath(containerFile, function(theNode) {
+                contentNode = theNode;
+                contentNode.setName('container');
+                next();
+            });
+        },
+        function(next) {
+            // add content node
+            scrollNode.addChild(contentNode);
+            scroll.content = contentNode;
+
+            // add scrollbar
+            if (scroll.vertical) {
+                var vScrollBarNode = _genScrollBar(cc.Scrollbar.Direction.VERTICAL, 'vScrollBar', scrollNode.getContentSize());
+                scrollNode.addChild(vScrollBarNode);
+                scroll.verticalScrollBar = vScrollBarNode.getComponent(cc.Scrollbar);
+            }
+            if (scroll.horizontal) {
+                var hScrollBarNode = _genScrollBar(cc.Scrollbar.Direction.HORIZONTAL, 'hScrollBar', scrollNode.getContentSize());
+                scrollNode.addChild(hScrollBarNode);
+                scroll.horizontalScrollBar = hScrollBarNode.getComponent(cc.Scrollbar);
+            }
+            next();
+        }
+    ], function() {
+        cb(contentNode, scrollNode);
+    });
+}
+
+function _genScrollBar(direction, name, viewSize) {
+    var retNode = new cc.Node(name);
+    var scrollbar = retNode.addComponent(cc.Scrollbar);
+    scrollbar.direction = direction;
+
+    var widget = retNode.addComponent(cc.Widget);
+    widget.isAlignRight = true;
+    widget.isAlignBottom = true;
+    widget.isAlignTop = (direction === cc.Scrollbar.Direction.VERTICAL);
+    widget.isAlignLeft = (direction === cc.Scrollbar.Direction.HORIZONTAL);
+
+    var barNode = new cc.Node('bar');
+    retNode.addChild(barNode);
+    var barSp = barNode.addComponent(cc.Sprite);
+    barSp.type = cc.Sprite.Type.SLICED;
+    barSp.trim = false;
+    barSp.sizeMode = cc.Sprite.SizeMode.CUSTOM;
+    barSp.spriteFrame = new cc.SpriteFrame();
+    if (direction === cc.Scrollbar.Direction.HORIZONTAL) {
+        retNode.setContentSize(viewSize.width, 15);
+        barNode.setContentSize(viewSize.width * 0.7, 15);
+        barSp.spriteFrame._uuid = Editor.assetdb.remote.urlToUuid(DEFAULT_HSCROLLBAR_URL);
+    } else {
+        retNode.setContentSize(15, viewSize.height);
+        barNode.setContentSize(15, viewSize.height * 0.7);
+        barSp.spriteFrame._uuid = Editor.assetdb.remote.urlToUuid(DEFAULT_VSCROLLBAR_URL);
+    }
+    scrollbar.handle = barSp;
+
+    return retNode;
 }
 
 module.exports = {
