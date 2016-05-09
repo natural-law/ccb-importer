@@ -99,7 +99,14 @@ function _createPrefabFromFile(ccbFile, targetPath, cb) {
     Async.waterfall([
         function(next) {
             animationData = {};
-            _createNodeGraph(rootNode, ccbFileObj.nodeGraph, '', function() {
+            var resolutionIdx = ccbFileObj.currentResolution;
+            var resolutions = ccbFileObj.resolutions;
+            var sceneSize = new cc.Size(0, 0);
+            if (resolutions && resolutions[resolutionIdx]) {
+                sceneSize.width = resolutions[resolutionIdx].width;
+                sceneSize.height = resolutions[resolutionIdx].height;
+            }
+            _createNodeGraph(rootNode, ccbFileObj.nodeGraph, '', sceneSize, function() {
                 next();
             });
         },
@@ -125,7 +132,7 @@ function _createAnimationClips(node, prefabPath, cb) {
 }
 
 // ---------- NodeGraph related methods ----------
-function _createNodeGraph(rootNode, nodeData, curNodePath, cb) {
+function _createNodeGraph(rootNode, nodeData, curNodePath, parentSize, cb) {
     var cbNode = rootNode;
     Async.waterfall([
         function(next) {
@@ -133,7 +140,7 @@ function _createNodeGraph(rootNode, nodeData, curNodePath, cb) {
                 var nodeType = nodeData.baseClass;
                 var creator = nodeCreators[nodeType];
                 if (creator) {
-                    creator(nodeData, function(newNode, returnNode) {
+                    creator(nodeData, parentSize, function(newNode, returnNode) {
                         rootNode = newNode;
                         cbNode = returnNode ? returnNode : rootNode;
                         next();
@@ -163,7 +170,7 @@ function _createNodeGraph(rootNode, nodeData, curNodePath, cb) {
             if (!curNodePath) {
                 rootNode.setName(nodeData.displayName);
             }
-            _initNode(rootNode, nodeData, next);
+            _initNode(rootNode, nodeData, parentSize, next);
         },
         function(next) {
             // loop in the Children
@@ -173,6 +180,7 @@ function _createNodeGraph(rootNode, nodeData, curNodePath, cb) {
                 return;
             }
 
+            var nodeSize = rootNode.getContentSize();
             var addedChildNames = [];
             var index = 0;
             Async.whilst(
@@ -183,7 +191,7 @@ function _createNodeGraph(rootNode, nodeData, curNodePath, cb) {
                     var theNodeName = _genChildName(childrenData[index], addedChildNames);
                     curNodePath += ('/' + theNodeName);
 
-                    _createNodeGraph(null, childrenData[index], curNodePath, function(newNode) {
+                    _createNodeGraph(null, childrenData[index], curNodePath, nodeSize, function(newNode) {
                         newNode.setName(theNodeName);
                         addedChildNames.push(theNodeName);
                         rootNode.addChild(newNode);
@@ -240,16 +248,13 @@ function _getProperty(props, key, defaultValue) {
     return defaultValue;
 }
 
-function _initNode(node, nodeData, cb) {
+function _initNode(node, nodeData, parentSize, cb) {
     var nodeType = nodeData.baseClass;
 
     var props = _genProperties(nodeData);
     if (nodeType !== 'CCScrollView') {
-        _initBaseProperties(node, props);
+        _initBaseProperties(node, props, parentSize);
     }
-
-    // add widget component if necessary
-    //_addWidget(node, nodeData);
 
     // init the node with data of specified type
     if (nodeType && nodeImporters[nodeType]) {
@@ -276,7 +281,74 @@ function _convertNodePos(node, curPos) {
     return cc.p(newX, newY);
 }
 
-function _initBaseProperties(node, props) {
+function _setPosAndSize(node, props, parentSize) {
+    var posValue = _getProperty(props, 'position', [0, 0, 0]);
+    var sizeValue = null;
+    if (props.preferedSize) {
+        sizeValue = _getProperty(props, 'preferedSize');
+    }
+    else if (props.dimensions) {
+        sizeValue = _getProperty(props, 'dimensions');
+    }
+    else {
+        sizeValue = _getProperty(props, 'contentSize', [ 0.0, 0.0, 0 ]);
+    }
+
+    // set content size
+    var sizeType = sizeValue[2];
+    var width = sizeValue[0];
+    var height = sizeValue[1];
+    switch(sizeType) {
+        case 1: // PERCENT:
+            width = parentSize.width * width / 100;
+            height = parentSize.height * height / 100;
+            break;
+        case 2: // RELATIVE_CONTAINER:
+            width = parentSize.width - width;
+            height = parentSize.height - height;
+            break;
+        case 3: // HORIZONTAL_PERCENT:
+            width = parentSize.width * width / 100;
+            break;
+        case 4: // VERTICAL_PERCENT:
+            height = parentSize.height * height / 100;
+            break;
+        case 0: // ABSOLUTE:
+        case 5: // MULTIPLY_RESOLUTION:
+        default:
+            break;
+    }
+    node.setContentSize(width, height);
+
+    // set position
+    var posType = posValue[2];
+    var x = posValue[0];
+    var y = posValue[1];
+
+    switch(posType) {
+        case 1: // RELATIVE_TOP_LEFT
+            y = parentSize.height - y;
+            break;
+        case 2: // RELATIVE_TOP_RIGHT
+            x = parentSize.width - x;
+            y = parentSize.height - y;
+            break;
+        case 3: // RELATIVE_BOTTOM_RIGHT
+            x = parentSize.width - x;
+            break;
+        case 4: // PERCENT
+            x = parentSize.width * x / 100;
+            y = parentSize.height * y / 100;
+            break;
+        case 0: // RELATIVE_BOTTOM_LEFT
+        case 5: // MULTIPLY_RESOLUTION
+        default:
+            break;
+    }
+    node.setPosition(x, y);
+}
+
+function _initBaseProperties(node, props, parentSize) {
     node.active = _getProperty(props, 'visible', true);
     var anchorValue = _getProperty(props, 'anchorPoint', [ 0, 0 ]);
     var ignoreAnchor = _getProperty(props, 'ignoreAnchorPointForPosition', false);
@@ -285,10 +357,7 @@ function _initBaseProperties(node, props) {
     } else {
         node.setAnchorPoint(anchorValue[0], anchorValue[1]);
     }
-    var sizeValue = _getProperty(props, 'contentSize', [ 0.0, 0.0, 0 ]);
-    node.setContentSize(sizeValue[0], sizeValue[1]);
-    var posValue = _getProperty(props, 'position', [ 0.0, 0.0, 0 ]);
-    node.setPosition(posValue[0], posValue[1]);
+    _setPosAndSize(node, props, parentSize);
     node.setRotation(_getProperty(props, 'rotation', 0));
 
     // init the scale value
@@ -734,16 +803,16 @@ function _createNodeWithCCBPath(filePath, cb) {
     });
 }
 
-function _createNodeFromCCB(nodeData, cb) {
+function _createNodeFromCCB(nodeData, parentSize, cb) {
     var props = _genProperties(nodeData);
     var filePath = _getProperty(props, 'ccbFile', '');
     _createNodeWithCCBPath(filePath, cb);
 }
 
-function _createScrollView(nodeData, cb) {
+function _createScrollView(nodeData, parentSize, cb) {
     var scrollNode = new cc.Node();
     var props = _genProperties(nodeData);
-    _initBaseProperties(scrollNode, props);
+    _initBaseProperties(scrollNode, props, parentSize);
     var scroll = scrollNode.addComponent(cc.ScrollView);
     if (!scroll) {
         return cb(scrollNode);
