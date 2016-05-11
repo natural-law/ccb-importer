@@ -6,13 +6,16 @@ const Fs = require('fire-fs');
 const Plist = require('plist');
 const Url = require('fire-url');
 
-const DEFAULT_SP_URL = 'db://internal/image/default_sprite.png/default_sprite';
+//const DEFAULT_SP_URL = 'db://internal/image/default_sprite.png/default_sprite';
 const DEFAULT_SPLASH_SP_URL = 'db://internal/image/default_sprite_splash.png/default_sprite_splash';
 const DEFAULT_BTN_NORMAL_URL = 'db://internal/image/default_btn_normal.png/default_btn_normal';
 const DEFAULT_BTN_PRESSED_URL = 'db://internal/image/default_btn_pressed.png/default_btn_pressed';
 const DEFAULT_BTN_DISABLED_URL = 'db://internal/image/default_btn_disabled.png/default_btn_disabled';
 const DEFAULT_VSCROLLBAR_URL = 'db://internal/image/default_scrollbar_vertical.png/default_scrollbar_vertical';
 const DEFAULT_HSCROLLBAR_URL = 'db://internal/image/default_scrollbar.png/default_scrollbar';
+
+const ACTION_FOLDER_SUFFIX = '_action';
+const DEFAULT_ACTION_FPS = 30;
 
 const nodeCreators = {
     'CCBFile' : _createNodeFromCCB,
@@ -30,12 +33,23 @@ const nodeImporters = {
     'CCParticleSystemQuad' : _initParticle
 };
 
+const actionPropsParser = {
+    'position' : _parsePosition,
+    'rotation' : _parseRotation,
+    'scale' : _parseScale,
+    'visible' : _parseVisible,
+    'color' : _parseColor,
+    'opacity' : _parseOpacity,
+    'displayFrame' : _parseFrame
+};
+
 var resRootUrl = '';
 var resTempPath = '';
 var ccbsTempPath = '';
 
 var importedCCBFiles = [];
 var animationData = {};
+var sequences = [];
 
 function importCCBFiles(ccbFiles, tempResPath, tempCCBsPath, targetRootUrl, cb) {
     resTempPath = tempResPath;
@@ -99,6 +113,7 @@ function _createPrefabFromFile(ccbFile, targetPath, cb) {
     Async.waterfall([
         function(next) {
             animationData = {};
+            sequences = ccbFileObj.sequences;
             var resolutionIdx = ccbFileObj.currentResolution;
             var resolutions = ccbFileObj.resolutions;
             var sceneSize = new cc.Size(0, 0);
@@ -128,7 +143,278 @@ function _createPrefabFromFile(ccbFile, targetPath, cb) {
 
 // ---------- Animation related methods ----------
 function _createAnimationClips(node, prefabPath, cb) {
-    cb();
+    if (!animationData.selfData && !animationData.childrenData) {
+        // no animation data
+        return cb();
+    }
+
+    var timelines = [];
+    var defaultClipIdx = -1;
+    var i, n;
+    for (i = 0, n = sequences.length; i < n; i++) {
+        var theInfo = sequences[i];
+        timelines[i] = {
+            name : theInfo.name,
+            duration : theInfo.length,
+            sample : DEFAULT_ACTION_FPS
+        };
+
+        if (theInfo.autoPlay) {
+            defaultClipIdx = i;
+        }
+    }
+
+    if (animationData.selfData) {
+        _collectFrames(animationData.selfData, '', timelines);
+    }
+
+    if (animationData.childrenData) {
+        for (var nodePath in animationData.childrenData) {
+            if (!animationData.childrenData.hasOwnProperty(nodePath)) {
+                continue;
+            }
+
+            _collectFrames(animationData.childrenData[nodePath], nodePath, timelines);
+        }
+    }
+
+    // write files
+    var actionTempPath = _genActionTempPath(prefabPath);
+    if (!Fs.existsSync(actionTempPath)) {
+        Fs.mkdirsSync(actionTempPath);
+    }
+    var parentPath = Path.dirname(actionTempPath);
+    var relativeFolder = Path.relative(resTempPath, parentPath);
+    var targetUrl = Url.join(resRootUrl, relativeFolder);
+    var importedUrls = [];
+
+    for (i = 0, n = timelines.length; i < n; i++) {
+        var timeline = timelines[i];
+        var targetFileName =  timeline.name + '.anim';
+        var animFilePath = Path.join(actionTempPath, targetFileName);
+        var animClip = new cc.AnimationClip();
+        animClip.sample = timeline.sample;
+        animClip._name = timeline.name;
+        animClip._duration = timeline.duration;
+        animClip.curveData = timeline.curveData;
+        var animClipStr = Editor.serialize(animClip);
+        Fs.writeFileSync(animFilePath, animClipStr);
+
+        importedUrls.push(Url.join(targetUrl, Path.basename(actionTempPath), targetFileName));
+    }
+
+    Async.waterfall([
+        function(next) {
+            // import animation files to assets
+            Editor.assetdb.import([actionTempPath], targetUrl, false, function() {
+                next();
+            });
+        },
+        function(next) {
+            // add animation component for the node
+            var animateComponent = node.addComponent(cc.Animation);
+            if (!animateComponent) {
+                Editor.warn('Add Animation component failed.');
+                next();
+            } else {
+                // set properties for animation component
+                for (i = 0, n = importedUrls.length; i < n; i++) {
+                    var clipUrl = importedUrls[i];
+                    var uuid = Editor.assetdb.remote.urlToUuid(clipUrl);
+                    if (!uuid) {
+                        continue;
+                    }
+
+                    var animClip = new cc.AnimationClip();
+                    animClip._uuid = uuid;
+                    animClip._name = Url.basenameNoExt(clipUrl);
+                    animateComponent.addClip(animClip);
+
+                    if (defaultClipIdx === i) {
+                        animateComponent.defaultClip = animClip;
+                        animateComponent.playOnLoad = true;
+                    }
+                }
+                next();
+            }
+        }
+    ], cb);
+}
+
+function _genActionTempPath(prefabPath) {
+    var folderPath = Path.dirname(prefabPath);
+    var relativePath = Path.relative(resTempPath, folderPath);
+    var prefabName = Path.basename(prefabPath, Path.extname(prefabPath));
+
+    var folderName = prefabName + ACTION_FOLDER_SUFFIX;
+    var checkUrl = Url.join(resRootUrl, relativePath, folderName);
+    var i = 1;
+    while (Fs.existsSync(Editor.assetdb.remote._fspath(checkUrl))) {
+        folderName = prefabName + ACTION_FOLDER_SUFFIX + i;
+        checkUrl = Url.join(resRootUrl, relativePath, folderName);
+        i++;
+    }
+
+    return Path.join(resTempPath, relativePath, folderName);
+}
+
+function _collectFrames(nodeFrameData, nodePath, timelines) {
+    var theNodeObj = nodeFrameData.theNode;
+    for (var i = 0, n = timelines.length; i < n; i++) {
+        var frameForTimeline = nodeFrameData['' + i];
+        if (!frameForTimeline) {
+            continue;
+        }
+
+        if (!timelines[i].curveData) {
+            timelines[i].curveData = {};
+        }
+
+        if (!nodePath) {
+            // is the rootNode
+            _gatherFrameData(frameForTimeline, theNodeObj, timelines[i].curveData);
+        } else {
+            if (!timelines[i].curveData.paths) {
+                timelines[i].curveData.paths = {};
+            }
+            if (!timelines[i].curveData.paths[nodePath]) {
+                timelines[i].curveData.paths[nodePath] = {};
+            }
+            _gatherFrameData(frameForTimeline, theNodeObj, timelines[i].curveData.paths[nodePath]);
+        }
+    }
+}
+
+function _gatherFrameData(propsData, theNodeObj, ret) {
+    if (!ret.props) {
+        ret.props = {};
+    }
+
+    if (!ret.comps) {
+        ret.comps = {};
+    }
+
+    for (var prop in propsData) {
+        if (!propsData.hasOwnProperty(prop)) {
+            continue;
+        }
+
+        var parser = actionPropsParser[prop];
+        if (parser) {
+            parser(propsData[prop], theNodeObj, ret);
+        } else {
+            Editor.log('Action for property "%s" is not supported.', prop);
+        }
+    }
+}
+
+function _parsePosition(data, theNodeObj, ret) {
+    ret.props.position = [];
+    for (var i = 0, n = data.keyframes.length; i < n; i++) {
+        var keyFrame = data.keyframes[i];
+        var frameData = {};
+        frameData.frame = keyFrame.time;
+        var pos = _convertNodePos(theNodeObj, cc.p(keyFrame.value[0], keyFrame.value[1]));
+        frameData.value = [ pos.x, pos.y ];
+
+        ret.props.position.push(frameData);
+    }
+}
+
+function _parseRotation(data, theNodeObj, ret) {
+    ret.props.rotation = [];
+    for (var i = 0, n = data.keyframes.length; i < n; i++) {
+        var keyFrame = data.keyframes[i];
+        var frameData = {
+            frame: keyFrame.time,
+            value: keyFrame.value
+        };
+        ret.props.rotation.push(frameData);
+    }
+}
+
+function _parseScale(data, theNodeObj, ret) {
+    ret.props.scaleX = [];
+    ret.props.scaleY = [];
+    for (var i = 0, n = data.keyframes.length; i < n; i++) {
+        var keyFrame = data.keyframes[i];
+        var frameDataX = {
+            frame: keyFrame.time,
+            value: keyFrame.value[0]
+        };
+        var frameDataY = {
+            frame: keyFrame.time,
+            value: keyFrame.value[1]
+        };
+
+        ret.props.scaleX.push(frameDataX);
+        ret.props.scaleY.push(frameDataY);
+    }
+}
+
+function _parseVisible(data, theNodeObj, ret) {
+    ret.props.active = [];
+    for (var i = 0, n = data.keyframes.length; i < n; i++) {
+        var keyFrame = data.keyframes[i];
+        var frameData = {
+            frame: keyFrame.time,
+            value: ((i % 2) === 0)
+        };
+        ret.props.active.push(frameData);
+    }
+}
+
+function _parseColor(data, theNodeObj, ret) {
+    ret.props.color = [];
+    for (var i = 0, n = data.keyframes.length; i < n; i++) {
+        var keyFrame = data.keyframes[i];
+        var frameData = {
+            frame: keyFrame.time,
+            value: new cc.Color(keyFrame.value[0], keyFrame.value[1], keyFrame.value[2])
+        };
+        ret.props.color.push(frameData);
+    }
+}
+
+function _parseOpacity(data, theNodeObj, ret) {
+    ret.props.opacity = [];
+    for (var i = 0, n = data.keyframes.length; i < n; i++) {
+        var keyFrame = data.keyframes[i];
+        var frameData = {
+            frame: keyFrame.time,
+            value: keyFrame.value
+        };
+        ret.props.opacity.push(frameData);
+    }
+}
+
+function _parseFrame(data, theNodeObj, ret) {
+    if (!theNodeObj) {
+        return;
+    }
+    var sp = theNodeObj.getComponent(cc.Sprite);
+    if (sp) {
+        var compName = 'cc.Sprite';
+        if (!ret.comps[compName]) {
+            ret.comps[compName] = {};
+        }
+        var spFramePropInfo = [];
+        for (var i = 0, n = data.keyframes.length; i < n; i++) {
+            var keyFrame = data.keyframes[i];
+            var frameCfg = [ keyFrame.value[1], keyFrame.value[0] ];
+            var spFrame = _getSpriteFrame(frameCfg, '');
+            if (!spFrame) {
+                continue;
+            }
+
+            var frameData = {
+                frame: keyFrame.time,
+                value: spFrame
+            };
+            spFramePropInfo.push(frameData);
+        }
+        ret.comps[compName].spriteFrame = spFramePropInfo;
+    }
 }
 
 // ---------- NodeGraph related methods ----------
@@ -159,11 +445,13 @@ function _createNodeGraph(rootNode, nodeData, curNodePath, parentSize, cb) {
             if (nodeData.animatedProperties) {
                 if (!curNodePath) {
                     animationData.selfData = nodeData.animatedProperties;
+                    animationData.selfData.theNode = rootNode;
                 } else {
                     if (!animationData.childrenData) {
                         animationData.childrenData = {};
                     }
                     animationData.childrenData[curNodePath] = nodeData.animatedProperties;
+                    animationData.childrenData[curNodePath].theNode = rootNode;
                 }
             }
 
@@ -183,15 +471,17 @@ function _createNodeGraph(rootNode, nodeData, curNodePath, parentSize, cb) {
             var nodeSize = rootNode.getContentSize();
             var addedChildNames = [];
             var index = 0;
+            if (curNodePath) {
+                curNodePath += '/';
+            }
             Async.whilst(
                 function() {
                     return index < childrenData.length;
                 },
                 function(callback) {
                     var theNodeName = _genChildName(childrenData[index], addedChildNames);
-                    curNodePath += ('/' + theNodeName);
-
-                    _createNodeGraph(null, childrenData[index], curNodePath, nodeSize, function(newNode) {
+                    var childPath = curNodePath + theNodeName;
+                    _createNodeGraph(null, childrenData[index], childPath, nodeSize, function(newNode) {
                         newNode.setName(theNodeName);
                         addedChildNames.push(theNodeName);
                         rootNode.addChild(newNode);
@@ -422,7 +712,7 @@ function _initSpriteWithSizeMode(node, props, frameKey, sizeMode) {
     var frameData = _getProperty(props, frameKey, null);
     sp.sizeMode = sizeMode;
     sp.trim = false;
-    sp.spriteFrame = _getSpriteFrame(frameData, DEFAULT_SP_URL);
+    sp.spriteFrame = _getSpriteFrame(frameData, '');
 }
 
 function _setScale9Properties(props, uuid, cb) {
