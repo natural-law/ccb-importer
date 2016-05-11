@@ -17,6 +17,14 @@ const DEFAULT_HSCROLLBAR_URL = 'db://internal/image/default_scrollbar.png/defaul
 const ACTION_FOLDER_SUFFIX = '_action';
 const DEFAULT_ACTION_FPS = 30;
 
+const easePrefixTypes = [
+    'cubic', 'elastic', 'bounce', 'back'
+];
+
+const easeSuffixTypes = [
+    'In', 'Out', 'InOut'
+];
+
 const nodeCreators = {
     'CCBFile' : _createNodeFromCCB,
     'CCScrollView' : _createScrollView
@@ -308,6 +316,33 @@ function _gatherFrameData(propsData, theNodeObj, ret) {
     }
 }
 
+function _getEasingData(keyFrame) {
+    if (!keyFrame.easing) {
+        return null;
+    }
+
+    var easeType = keyFrame.easing.type;
+    if (easeType < 0 || easeType > 13) {
+        return null;
+    }
+
+    var ret = null;
+    if (easeType === 0) {
+        ret = 'constant';
+    }
+    else if (easeType === 1) {
+        ret = 'linear';
+    }
+    else {
+        var type = easeType - 2;
+        var prefixIdx = Math.floor((type - 1) / 3);
+        var suffixIdx = (type - 1) % 3;
+        ret = easePrefixTypes[prefixIdx] + easeSuffixTypes[suffixIdx];
+    }
+
+    return ret;
+}
+
 function _parsePosition(data, theNodeObj, ret) {
     ret.props.position = [];
     for (var i = 0, n = data.keyframes.length; i < n; i++) {
@@ -316,6 +351,11 @@ function _parsePosition(data, theNodeObj, ret) {
         frameData.frame = keyFrame.time;
         var pos = _convertNodePos(theNodeObj, cc.p(keyFrame.value[0], keyFrame.value[1]));
         frameData.value = [ pos.x, pos.y ];
+
+        var easeData = _getEasingData(keyFrame);
+        if (easeData) {
+            frameData.curve = easeData;
+        }
 
         ret.props.position.push(frameData);
     }
@@ -329,6 +369,12 @@ function _parseRotation(data, theNodeObj, ret) {
             frame: keyFrame.time,
             value: keyFrame.value
         };
+
+        var easeData = _getEasingData(keyFrame);
+        if (easeData) {
+            frameData.curve = easeData;
+        }
+
         ret.props.rotation.push(frameData);
     }
 }
@@ -346,6 +392,13 @@ function _parseScale(data, theNodeObj, ret) {
             frame: keyFrame.time,
             value: keyFrame.value[1]
         };
+
+
+        var easeData = _getEasingData(keyFrame);
+        if (easeData) {
+            frameDataX.curve = easeData;
+            frameDataY.curve = easeData;
+        }
 
         ret.props.scaleX.push(frameDataX);
         ret.props.scaleY.push(frameDataY);
@@ -372,6 +425,12 @@ function _parseColor(data, theNodeObj, ret) {
             frame: keyFrame.time,
             value: new cc.Color(keyFrame.value[0], keyFrame.value[1], keyFrame.value[2])
         };
+
+        var easeData = _getEasingData(keyFrame);
+        if (easeData) {
+            frameData.curve = easeData;
+        }
+
         ret.props.color.push(frameData);
     }
 }
@@ -384,6 +443,12 @@ function _parseOpacity(data, theNodeObj, ret) {
             frame: keyFrame.time,
             value: keyFrame.value
         };
+
+        var easeData = _getEasingData(keyFrame);
+        if (easeData) {
+            frameData.curve = easeData;
+        }
+
         ret.props.opacity.push(frameData);
     }
 }
