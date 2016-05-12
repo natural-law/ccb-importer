@@ -759,7 +759,21 @@ function _getSpriteFrame(frameData, defaultUrl) {
 
 function _initSprite(node, props, cb) {
     _initSpriteWithSizeMode(node, props, 'displayFrame', cc.Sprite.SizeMode.RAW);
-    cb();
+    var sp = node.getComponent(cc.Sprite);
+    if (sp && sp.spriteFrame) {
+        var uuid = sp.spriteFrame._uuid;
+        Editor.assetdb.queryMetaInfoByUuid(uuid, function(err,info) {
+            if (!info) {
+                return cb();
+            }
+
+            var meta = JSON.parse(info.json);
+            node.setContentSize(meta.width, meta.height);
+            cb();
+        });
+    } else {
+        cb();
+    }
 }
 
 function _initSpriteWithSizeMode(node, props, frameKey, sizeMode) {
